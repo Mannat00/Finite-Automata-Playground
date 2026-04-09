@@ -228,7 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <input
                 type="text"
-                placeholder={`Symbols (e.g. ${alphabet[0] || '0'}, ε)`}
+                placeholder={`Symbols (e.g. ${alphabet[0] || '0'}, E, ε)`}
                 value={newTransSymbols}
                 onChange={(e) => setNewTransSymbols(e.target.value)}
                 className="w-full text-[11px] p-2 rounded-md border border-[#30363D] bg-[#161820] text-[#79C0FF] focus:outline-none focus:border-[#4F8EF7] font-mono"

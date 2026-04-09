@@ -12,6 +12,7 @@ interface AutomatonCanvasProps {
   selectedId: string | null;
   activeStateIds: string[];
   activeTransitionIds: string[];
+  invalidTransitionIds: string[];
 }
 
 export const AutomatonCanvas: React.FC<AutomatonCanvasProps> = ({
@@ -23,6 +24,7 @@ export const AutomatonCanvas: React.FC<AutomatonCanvasProps> = ({
   selectedId,
   activeStateIds,
   activeTransitionIds,
+  invalidTransitionIds,
 }) => {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [stageScale, setStageScale] = useState(1);
@@ -157,59 +159,81 @@ export const AutomatonCanvas: React.FC<AutomatonCanvasProps> = ({
           })()}
 
           {/* Transitions */}
-          {transitions.map((t) => {
-            const from = states.find((s) => s.id === t.from);
-            const to = states.find((s) => s.id === t.to);
-            if (!from || !to) return null;
+          {(() => {
+            const groupedTransitions = new Map<string, Transition[]>();
+            transitions.forEach(t => {
+              const key = `${t.from}-${t.to}`;
+              if (!groupedTransitions.has(key)) {
+                groupedTransitions.set(key, []);
+              }
+              groupedTransitions.get(key)!.push(t);
+            });
 
-            const isSelf = t.from === t.to;
-            const points = getTransitionPoints(from, to, isSelf);
-            const isActive = activeTransitionIds.includes(t.id);
-            const isSelected = selectedId === t.id;
-            const isEpsilon = t.symbols.includes('ε');
+            return Array.from(groupedTransitions.values()).map((group) => {
+              const first = group[0];
+              const from = states.find((s) => s.id === first.from);
+              const to = states.find((s) => s.id === first.to);
+              if (!from || !to) return null;
 
-            let stroke = '#C8CDD8';
-            if (isActive) stroke = '#4F8EF7';
-            else if (isEpsilon) stroke = '#E3B341';
+              const isSelf = first.from === first.to;
+              const points = getTransitionPoints(from, to, isSelf);
+              
+              const allSymbols = group.flatMap(t => t.symbols);
+              const isActive = group.some(t => activeTransitionIds.includes(t.id));
+              const isInvalid = group.some(t => invalidTransitionIds.includes(t.id));
+              const selectedInGroup = group.find(t => t.id === selectedId);
+              const isSelected = !!selectedInGroup;
+              const hasEpsilon = allSymbols.some(s => s === 'ε' || s === 'E');
 
-            // Label position
-            let labelX, labelY;
-            if (isSelf) {
-              labelX = from.x;
-              labelY = from.y - 90;
-            } else if (points.length === 6) {
-              labelX = points[2];
-              labelY = points[3] - 15;
-            } else {
-              labelX = (points[0] + points[2]) / 2;
-              labelY = (points[1] + points[3]) / 2 - 15;
-            }
+              let stroke = '#C8CDD8';
+              if (isInvalid) stroke = '#F87171';
+              else if (isActive) stroke = '#4F8EF7';
+              else if (hasEpsilon) stroke = '#E3B341';
 
-            return (
-              <Group key={t.id} onClick={() => onSelectTransition(t.id)}>
-                <Arrow
-                  points={points}
-                  stroke={stroke}
-                  strokeWidth={isActive ? 3 : 2}
-                  fill={stroke}
-                  tension={isSelf || points.length === 6 ? 0.5 : 0}
-                  pointerLength={8}
-                  pointerWidth={8}
-                  dash={isActive ? [10, 5] : undefined}
-                />
-                <Text
-                  x={labelX - 100}
-                  y={labelY}
-                  text={t.symbols.join(' / ')}
-                  fontSize={13}
-                  fontFamily="JetBrains Mono, monospace"
-                  fill={isActive ? '#4F8EF7' : isEpsilon ? '#E3B341' : '#9CA3AF'}
-                  align="center"
-                  width={200}
-                />
-              </Group>
-            );
-          })}
+              // Label position
+              let labelX, labelY;
+              if (isSelf) {
+                labelX = from.x;
+                labelY = from.y - 90;
+              } else if (points.length === 6) {
+                labelX = points[2];
+                labelY = points[3] - 15;
+              } else {
+                labelX = (points[0] + points[2]) / 2;
+                labelY = (points[1] + points[3]) / 2 - 15;
+              }
+
+              return (
+                <Group 
+                  key={`${first.from}-${first.to}`} 
+                  onClick={() => onSelectTransition(selectedInGroup ? selectedInGroup.id : first.id)}
+                >
+                  <Arrow
+                    points={points}
+                    stroke={stroke}
+                    strokeWidth={isActive ? 3 : isSelected ? 2.5 : 2}
+                    fill={stroke}
+                    tension={isSelf || points.length === 6 ? 0.5 : 0}
+                    pointerLength={8}
+                    pointerWidth={8}
+                    dash={isActive ? [10, 5] : undefined}
+                    shadowBlur={isSelected ? 10 : 0}
+                    shadowColor={stroke}
+                  />
+                  <Text
+                    x={labelX - 100}
+                    y={labelY}
+                    text={allSymbols.join(' / ')}
+                    fontSize={13}
+                    fontFamily="JetBrains Mono, monospace"
+                    fill={isInvalid ? '#F87171' : isActive ? '#4F8EF7' : hasEpsilon ? '#E3B341' : '#9CA3AF'}
+                    align="center"
+                    width={200}
+                  />
+                </Group>
+              );
+            });
+          })()}
 
           {/* States */}
           {states.map((state) => {
@@ -305,6 +329,11 @@ export const AutomatonCanvas: React.FC<AutomatonCanvasProps> = ({
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <div className="bg-[#161820]/80 backdrop-blur-sm p-2 rounded-lg border border-[#30363D] text-[11px] text-[#9CA3AF] font-mono shadow-xl">
           Drag to move states • Right-click/Drag stage to pan • Scroll to zoom
+          {invalidTransitionIds.length > 0 && (
+            <div className="text-[#F87171] mt-1 font-bold">
+              ⚠️ DFA Violation: Red transitions have multiple destinations or ε
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2 bg-[#161820]/80 backdrop-blur-sm p-1.5 rounded-lg border border-[#30363D] shadow-xl self-start">

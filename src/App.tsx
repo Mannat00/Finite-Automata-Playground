@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AutomatonCanvas } from './components/AutomatonCanvas';
 import { SimulationControls } from './components/SimulationControls';
@@ -15,6 +15,8 @@ const INITIAL_TRANSITIONS: Transition[] = [
   { id: 't2', from: 'q1', to: 'q1', symbols: ['1'] },
   { id: 't3', from: 'q1', to: 'q0', symbols: ['0'] },
 ];
+
+const isEpsilon = (s: string) => s === 'ε' || s === 'E';
 
 export default function App() {
   const [states, setStates] = useState<State[]>(INITIAL_STATES);
@@ -51,7 +53,7 @@ export default function App() {
       while (changed) {
         changed = false;
         transitions.forEach(t => {
-          if (t.symbols.includes('ε') && closure.has(t.from) && !closure.has(t.to)) {
+          if (t.symbols.some(isEpsilon) && closure.has(t.from) && !closure.has(t.to)) {
             closure.add(t.to);
             changed = true;
           }
@@ -79,7 +81,7 @@ export default function App() {
 
       currentActiveIds.forEach(stateId => {
         transitions.forEach(t => {
-          if (t.from === stateId && t.symbols.includes(symbol)) {
+          if (t.from === stateId && t.symbols.some(s => s === symbol)) {
             nextActiveIds.add(t.to);
             usedTransitionIds.push(t.id);
           }
@@ -165,19 +167,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isPlaying, simulationResult, speed]);
 
-  // Handle Mode Switch Cleanup
-  useEffect(() => {
-    if (mode === AutomatonMode.DFA) {
-      setTransitions(prev => prev.filter(t => t.symbols.length === 1 && !t.symbols.includes('ε')));
-    }
-  }, [mode]);
-
   // Handle Alphabet Change Cleanup
   useEffect(() => {
     setTransitions(prev => {
       const updated = prev.map(t => ({
         ...t,
-        symbols: t.symbols.filter(s => alphabet.includes(s) || s === 'ε')
+        symbols: t.symbols.filter(s => alphabet.includes(s) || isEpsilon(s))
       })).filter(t => t.symbols.length > 0);
       
       // Only update if there's a real change to avoid unnecessary re-renders
@@ -187,6 +182,52 @@ export default function App() {
       return isDifferent ? updated : prev;
     });
   }, [alphabet]);
+
+  // Calculate invalid transitions for DFA mode
+  const invalidTransitionIds = useMemo(() => {
+    if (mode === AutomatonMode.NFA) return [];
+
+    const invalidIds = new Set<string>();
+
+    // Map: sourceId -> symbol -> List of transitionIds
+    const symbolMap = new Map<string, Map<string, string[]>>();
+
+    transitions.forEach(t => {
+      // 1. Check for epsilon in DFA
+      if (t.symbols.some(isEpsilon)) {
+        invalidIds.add(t.id);
+      }
+
+      // 2. Check for multiple symbols on one arrow (Strict DFA)
+      if (t.symbols.length > 1) {
+        invalidIds.add(t.id);
+      }
+
+      // 3. Track symbols for multi-destination check
+      if (!symbolMap.has(t.from)) {
+        symbolMap.set(t.from, new Map());
+      }
+      const stateMap = symbolMap.get(t.from)!;
+      
+      t.symbols.forEach(s => {
+        if (!stateMap.has(s)) {
+          stateMap.set(s, []);
+        }
+        stateMap.get(s)!.push(t.id);
+      });
+    });
+
+    // 4. Identify transitions that share a symbol from the same source
+    symbolMap.forEach((stateMap) => {
+      stateMap.forEach((ids) => {
+        if (ids.length > 1) {
+          ids.forEach(id => invalidIds.add(id));
+        }
+      });
+    });
+
+    return Array.from(invalidIds);
+  }, [transitions, mode]);
 
   // Handlers
   const handleAddState = () => {
@@ -212,7 +253,7 @@ export default function App() {
     const symbolList = symbols.split(',').map(s => s.trim()).filter(s => s !== '');
     
     // Alphabet Validation
-    const invalidSymbols = symbolList.filter(s => !alphabet.includes(s) && s !== 'ε');
+    const invalidSymbols = symbolList.filter(s => !alphabet.includes(s) && !isEpsilon(s));
     if (invalidSymbols.length > 0) {
       alert(`Error: Symbols ${invalidSymbols.join(', ')} are not in the current alphabet.`);
       return;
@@ -220,17 +261,7 @@ export default function App() {
 
     // DFA Validation
     if (mode === AutomatonMode.DFA) {
-      if (symbolList.length > 1) {
-        alert("DFA Error: Multiple symbols are not allowed for a single transition in DFA mode.");
-        return;
-      }
-
-      const existingTransitionBetweenStates = transitions.find(t => t.from === from && t.to === to);
-      if (existingTransitionBetweenStates) {
-        alert("DFA Error: A transition already exists between these states. Multiple symbols per transition are not allowed.");
-        return;
-      }
-
+      // Check for duplicate symbols from this state
       const existingSymbolsFromState = transitions
         .filter(t => t.from === from)
         .flatMap(t => t.symbols);
@@ -240,28 +271,17 @@ export default function App() {
         alert(`DFA Error: State already has transitions for symbols: ${overlap.join(', ')}`);
         return;
       }
-      if (symbolList.includes('ε')) {
-        alert("DFA Error: Epsilon transitions are not allowed in DFA mode.");
-        return;
-      }
     }
 
-    // Check if a transition between these two states already exists (for NFA merging)
-    const existingTransition = transitions.find(t => t.from === from && t.to === to);
-    if (existingTransition && mode === AutomatonMode.NFA) {
-      // Merge symbols
-      const mergedSymbols = Array.from(new Set([...existingTransition.symbols, ...symbolList]));
-      setTransitions(transitions.map(t => 
-        t.id === existingTransition.id ? { ...t, symbols: mergedSymbols } : t
-      ));
-    } else {
-      setTransitions([...transitions, {
-        id: `t${Date.now()}`,
-        from,
-        to,
-        symbols: symbolList
-      }]);
-    }
+    // Add each symbol as a separate transition
+    const newTransitions = symbolList.map((symbol, index) => ({
+      id: `t${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      from,
+      to,
+      symbols: [symbol]
+    }));
+
+    setTransitions([...transitions, ...newTransitions]);
   };
 
   const handleDeleteTransition = (id: string) => {
@@ -322,6 +342,7 @@ export default function App() {
             selectedId={selectedId}
             activeStateIds={currentStep?.activeStateIds || []}
             activeTransitionIds={currentStep?.lastTransitionIds || []}
+            invalidTransitionIds={invalidTransitionIds}
           />
         </div>
 
