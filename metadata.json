@@ -1,0 +1,5 @@
+{
+  "name": "Remix: Remix: Automata Designer \u0026 Simulator",
+  "description": "An interactive tool to design, visualize, and simulate Deterministic and Non-Deterministic Finite Automata (DFA/NFA).",
+  "requestFramePermissions": []
+}

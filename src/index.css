@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --bg-base:        #0F1117;
+  --bg-surface:     #161820;
+  --bg-raised:      #1A1D27;
+  --bg-overlay:     #1F2230;
+
+  --border-subtle:  #21262D;
+  --border-default: #30363D;
+  --border-strong:  #484F58;
+
+  --accent-blue:    #4F8EF7;
+  --accent-green:   #4ADE80;
+  --accent-emerald: #34D399;
+  --accent-red:     #F87171;
+  --accent-purple:  #9B7FF4;
+  --accent-amber:   #E3B341;
+  --accent-silver:  #C8CDD8;
+
+  --text-primary:   #E2E8F0;
+  --text-secondary: #9CA3AF;
+  --text-muted:     #6E7681;
+  --text-code:      #79C0FF;
+
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  8px;
+  --radius-xl:  12px;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.canvas-grid {
+  background-image: radial-gradient(circle, #30363D 1px, transparent 1px);
+  background-size: 24px 24px;
+}
